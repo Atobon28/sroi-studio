@@ -1,0 +1,29 @@
+import React,{useEffect,useMemo,useState} from 'react';
+import {Plus,Trash2,Info,Calculator,RotateCcw} from 'lucide-react';
+export type MatrixRow={id:string;result:string;gross:string;deadweight:string;attribution:string;displacement:string;duration:string};
+const sample:MatrixRow[]=[
+{id:'ex1',result:'Incremento en ingresos autónomos',gross:'608250000',deadweight:'25',attribution:'30',displacement:'10',duration:'12'},
+{id:'ex2',result:'Generación de empleo formal',gross:'751608000',deadweight:'30',attribution:'35',displacement:'10',duration:'12'},
+{id:'ex3',result:'Formalización — registro mercantil',gross:'38150000',deadweight:'15',attribution:'20',displacement:'0',duration:'12'},
+{id:'ex4',result:'Formalización — registro de marca',gross:'59400000',deadweight:'15',attribution:'20',displacement:'0',duration:'12'},
+{id:'ex5',result:'Acreditación sanitaria obtenida',gross:'19200000',deadweight:'15',attribution:'20',displacement:'0',duration:'12'}
+];
+const empty=(name=''):MatrixRow=>({id:Math.random().toString(36).slice(2),result:name,gross:'',deadweight:'',attribution:'',displacement:'',duration:'12'});
+const num=(v:string)=>Number(v)||0;
+export function netValue(row:MatrixRow){const p=[row.deadweight,row.attribution,row.displacement].map(num);if([row.gross,row.deadweight,row.attribution,row.displacement,row.duration].some(v=>v.trim()===''))return null;if(p.some(n=>n<0||n>100)||num(row.gross)<0||num(row.duration)<0)return null;return num(row.gross)*(1-p[0]/100)*(1-p[1]/100)*(1-p[2]/100)*(num(row.duration)/12)}
+const cop=(n:number)=>new Intl.NumberFormat('es-CO',{style:'currency',currency:'COP',maximumFractionDigits:0}).format(n);
+const storage=(projectId:number)=>'sroi-net-matrix-v1-'+projectId;
+export default function ImpactMatrix({projectId,indicators}:{projectId:number;indicators:{name:string}[]}){
+ const [rows,setRows]=useState<MatrixRow[]>([]);
+ const [ready,setReady]=useState(false);
+ useEffect(()=>{setReady(false);try{const existing=localStorage.getItem(storage(projectId));setRows(existing?JSON.parse(existing):projectId===1?sample.map(x=>({...x})):indicators.map(i=>empty(i.name)));}catch{setRows(projectId===1?sample.map(x=>({...x})):[])}setReady(true)},[projectId]);
+ useEffect(()=>{if(ready)localStorage.setItem(storage(projectId),JSON.stringify(rows))},[rows,projectId,ready]);
+ const totals=useMemo(()=>({gross:rows.reduce((a,r)=>a+num(r.gross),0),net:rows.reduce((a,r)=>a+(netValue(r)??0),0),valid:rows.filter(r=>netValue(r)!==null).length}),[rows]);
+ const patch=(id:string,key:keyof MatrixRow,val:string)=>setRows(a=>a.map(r=>r.id===id?{...r,[key]:val}:r));
+ const cols:[keyof MatrixRow,string][]=[['result','Resultado'],['gross','Valor bruto monetizado (COP)'],['deadweight','Peso muerto (%)'],['attribution','Atribución (%)'],['displacement','Desplazamiento (%)'],['duration','Duración (meses)']];
+ return <section className="net-matrix"><div className="net-matrix-heading"><div><div className="eyebrow mini">ETAPA 04 · MATRIZ DE IMPACTO NETO</div><h3>De valor bruto a impacto real.</h3><p>Ajusta cada resultado según peso muerto, atribución, desplazamiento y duración. Los totales se actualizan automáticamente.</p></div><span className="net-matrix-icon"><Calculator size={22}/></span></div>
+ <div className="net-summary"><div><span>VALOR BRUTO REGISTRADO</span><strong>{cop(totals.gross)}</strong></div><div className="net-summary-accent"><span>VALOR NETO ESTIMADO</span><strong>{cop(totals.net)}</strong></div><div><span>RESULTADOS CALCULADOS</span><strong>{totals.valid} / {rows.length}</strong></div></div>
+ <div className="net-table-scroll"><table className="net-table"><thead><tr><th>Resultado</th><th>Valor bruto (COP)</th><th>Peso muerto %</th><th>Atribución %</th><th>Desplazamiento %</th><th>Duración (meses)</th><th>Factor duración</th><th>Valor neto</th><th></th></tr></thead><tbody>{rows.map(row=><tr key={row.id}>{cols.map(([key,label])=><td key={key}><input aria-label={label+' — '+row.result} type={key==='result'?'text':'number'} min={key==='result'?undefined:0} max={['deadweight','attribution','displacement'].includes(key)?100:undefined} step={key==='result'?undefined:'any'} value={row[key]} onChange={e=>patch(row.id,key,e.target.value)} placeholder={key==='result'?'Describe el resultado':'—'} className={key==='result'?'result-input':''}/></td>)}<td className="calculated">{row.duration?Number(num(row.duration)/12).toFixed(2):'—'}</td><td className="calculated value">{netValue(row)===null?'—':cop(netValue(row)!)}</td><td><button className="net-remove" aria-label={'Eliminar '+row.result} onClick={()=>setRows(a=>a.filter(x=>x.id!==row.id))}><Trash2 size={15}/></button></td></tr>)}</tbody></table></div>
+ <div className="net-actions"><button type="button" className="btn-outline" onClick={()=>setRows(a=>[...a,empty()])}><Plus size={16}/> Añadir resultado</button>{indicators.filter(i=>!rows.some(r=>r.result===i.name)).length>0&&<button className="btn-outline" type="button" onClick={()=>setRows(a=>[...a,...indicators.filter(i=>!a.some(r=>r.result===i.name)).map(i=>empty(i.name))])}>Importar indicadores del proyecto</button>}{projectId===1&&<button type="button" className="btn-outline" onClick={()=>{if(window.confirm('¿Restaurar los cinco ejemplos de la matriz? Se reemplazarán los cambios en este proyecto de demostración.'))setRows(sample.map(r=>({...r})))}}><RotateCcw size={15}/> Restaurar ejemplo</button>}</div>
+ <div className="net-formula"><Info size={18}/><div><strong>Fórmula de la matriz compartida por Santiago</strong><p>Valor neto = Valor bruto × (1 − Peso muerto / 100) × (1 − Atribución / 100) × (1 − Desplazamiento / 100) × (Duración en meses / 12)</p><small>Los porcentajes se ingresan de 0 a 100. La matriz calcula el impacto neto de los datos introducidos; no equivale por sí sola al ratio SROI completo ni valida los valores brutos o supuestos.</small></div></div></section>
+}
